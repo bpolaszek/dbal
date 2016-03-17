@@ -19,7 +19,8 @@
 
 namespace Doctrine\DBAL\Driver\Mysqli;
 
-use Doctrine\DBAL\Driver\Connection as Connection;
+use Doctrine\DBAL\Connection AS DBALConnection;
+use Doctrine\DBAL\Driver\Connection as DriverConnection;
 use Doctrine\DBAL\Driver\PingableConnection;
 use Doctrine\DBAL\Driver\ServerInfoAwareConnection;
 
@@ -27,17 +28,12 @@ use Doctrine\DBAL\Driver\ServerInfoAwareConnection;
  * @author Kim Hemsø Rasmussen <kimhemsoe@gmail.com>
  * @author Till Klampaeckel <till@php.net>
  */
-class MysqliConnection implements Connection, PingableConnection, ServerInfoAwareConnection
+class MysqliConnection extends DBALConnection implements DriverConnection, PingableConnection, ServerInfoAwareConnection
 {
     /**
      * Name of the option to set connection flags
      */
     const OPTION_FLAGS = 'flags';
-
-    /**
-     * @var \mysqli
-     */
-    private $_conn;
 
     /**
      * @param array  $params
@@ -49,6 +45,7 @@ class MysqliConnection implements Connection, PingableConnection, ServerInfoAwar
      */
     public function __construct(array $params, $username, $password, array $driverOptions = array())
     {
+        parent::__construct($params, new Driver());
         $port = isset($params['port']) ? $params['port'] : ini_get('mysqli.default_port');
 
         // Fallback to default MySQL port if not given.
@@ -61,19 +58,25 @@ class MysqliConnection implements Connection, PingableConnection, ServerInfoAwar
 
         $flags = isset($driverOptions[static::OPTION_FLAGS]) ? $driverOptions[static::OPTION_FLAGS] : null;
 
-        $this->_conn = mysqli_init();
-
-        $this->setDriverOptions($driverOptions);
-
-        set_error_handler(function () {});
-
-        if ( ! $this->_conn->real_connect($params['host'], $username, $password, $dbname, $port, $socket, $flags)) {
-            restore_error_handler();
-
-            throw new MysqliException($this->_conn->connect_error, @$this->_conn->sqlstate ?: 'HY000', $this->_conn->connect_errno);
+        if (isset($params['mysqli'])) {
+            $this->_conn = $params['mysqli'];
+            $this->setDriverOptions($driverOptions);
         }
+        else {
+            $this->_conn = mysqli_init();
 
-        restore_error_handler();
+            $this->setDriverOptions($driverOptions);
+
+            set_error_handler(function () {});
+
+            if ( ! $this->_conn->real_connect($params['host'], $username, $password, $dbname, $port, $socket, $flags)) {
+                restore_error_handler();
+
+                throw new MysqliException($this->_conn->connect_error, @$this->_conn->sqlstate ?: 'HY000', $this->_conn->connect_errno);
+            }
+
+            restore_error_handler();
+        }
 
         if (isset($params['charset'])) {
             $this->_conn->set_charset($params['charset']);
